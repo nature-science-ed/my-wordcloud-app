@@ -6,63 +6,86 @@ import matplotlib.pyplot as plt
 import io
 
 # ページの設定
-st.set_page_config(page_title="感想ワードクラウド作成")
-st.title("📝 感想ワードクラウド作成")
+st.set_page_config(page_title="感想比較ワードクラウド", layout="wide")
+st.title("📊 振り返り分析：事実と感想の比較")
 
-# ストップワードの設定
-STOPWORDS = {
-    "こと","もの","ところ","今回","自分",
-    "思う","感じる","する","いる","なる",
-    "です","ます","そして","また"
+# 基本的な除外語（助詞や名詞のノイズ）
+BASE_STOPWORDS = {
+    "こと", "もの", "ところ", "今回", "自分", "です", "ます", 
+    "そして", "また", "広島大学", "広大", "大学", "見学", "以上"
 }
 
 t = Tokenizer()
 
-def extract_words(text):
+def extract_words(text, include_feelings=False):
     words = []
+    # 「思う」「感じる」などの感情語リスト
+    feeling_verbs = ["思う", "感じる", "考える", "知る", "驚く"]
+    
     for token in t.tokenize(str(text)):
         part = token.part_of_speech.split(",")[0]
         base = token.base_form
-        if part == "名詞" and base not in STOPWORDS and len(base) >= 2:
+        
+        # 1. 基本的な名詞の抽出
+        if part == "名詞" and base not in BASE_STOPWORDS and len(base) >= 2:
             words.append(base)
+        
+        # 2. 感情語を含める設定の場合、動詞もチェックして追加
+        if include_feelings:
+            if part == "動詞" and base in feeling_verbs:
+                words.append(base)
+                
     return " ".join(words)
 
 # ファイルアップローダー
 uploaded_file = st.file_uploader("エクセルまたはCSVファイルをアップロードしてください", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
-    # ファイルの読み込み
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)
     
-    # 列の選択（"text"列を探す）
     target_col = st.selectbox("分析したい列を選択してください", df.columns)
     
-    if st.button("ワードクラウドを生成"):
-        all_text = "\n".join(df[target_col].dropna().astype(str))
-        wakati = extract_words(all_text)
-
-        # ここを以下のように修正します
-        # Linux環境での日本語フォントの標準的なパスを指定します
-        FONT_PATH_JP = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-
-        wc = WordCloud(
-            font_path=FONT_PATH_JP, # ここでフォントを指定！
-            background_color="white",
-            width=1600,
-            height=1000,
-            collocations=False
-        ).generate(wakati)
-
-        # 表示
-        fig, ax = plt.subplots(figsize=(12, 7))
-        ax.imshow(wc)
-        ax.axis("off")
-        st.pyplot(fig)
+    if st.button("2種類のワードクラウドを生成して比較する"):
+        # フォントパス（Streamlit Cloud環境用）
+        FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
         
-        # 保存用
-        img_buf = io.BytesIO()
-        wc.to_image().save(img_buf, format='PNG')
-        st.download_button("画像を保存", data=img_buf.getvalue(), file_name="wordcloud.png")
+        # データ準備
+        all_text = "\n".join(df[target_col].dropna().astype(str))
+        
+        # 左側：事実・キーワード中心（感情語なし）
+        wakati_standard = extract_words(all_text, include_feelings=False)
+        # 右側：心理・学びのプロセス（感情語あり）
+        wakati_with_feelings = extract_words(all_text, include_feelings=True)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("① 事実・知識（名詞のみ）")
+            wc1 = WordCloud(font_path=FONT_PATH, background_color="white", width=800, height=600).generate(wakati_standard)
+            fig1, ax1 = plt.subplots()
+            ax1.imshow(wc1)
+            ax1.axis("off")
+            st.pyplot(fig1)
+            
+            # 保存ボタン
+            buf1 = io.BytesIO()
+            wc1.to_image().save(buf1, format='PNG')
+            st.download_button("①を保存", data=buf1.getvalue(), file_name="facts_only.png")
+
+        with col2:
+            st.subheader("② 学びのプロセス（感情語あり）")
+            wc2 = WordCloud(font_path=FONT_PATH, background_color="white", width=800, height=600).generate(wakati_with_feelings)
+            fig2, ax2 = plt.subplots()
+            ax2.imshow(wc2)
+            ax2.axis("off")
+            st.pyplot(fig2)
+            
+            # 保存ボタン
+            buf2 = io.BytesIO()
+            wc2.to_image().save(buf2, format='PNG')
+            st.download_button("②を保存", data=buf2.getvalue(), file_name="with_feelings.png")
+
+        st.info("左側は「何について学んだか」を、右側は「どう考え・感じたか」を分析するのに適しています。")
