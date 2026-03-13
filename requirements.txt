@@ -4,3 +4,4 @@ openpyxl
 janome
 wordcloud
 matplotlib
+openai
