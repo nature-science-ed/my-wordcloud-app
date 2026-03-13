@@ -44,9 +44,12 @@ if uploaded_file is not None:
         all_text = "\n".join(df[target_col].dropna().astype(str))
         wakati = extract_words(all_text)
 
-        # WordCloudの生成（クラウド上ではデフォルトフォントを使用）
+        # ここを以下のように修正します
+        # Linux環境での日本語フォントの標準的なパスを指定します
+        FONT_PATH_JP = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+
         wc = WordCloud(
-            font_path=None, # クラウド環境に合わせて調整が必要な場合があります
+            font_path=FONT_PATH_JP, # ここでフォントを指定！
             background_color="white",
             width=1600,
             height=1000,
