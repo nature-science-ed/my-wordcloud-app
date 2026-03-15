@@ -7,7 +7,8 @@ import io
 import base64
 from openai import OpenAI
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Mm
+from docx.enum.section import WD_ORIENT
 import re
 
 # --- 1. ページ設定 ---
@@ -24,6 +25,7 @@ except Exception:
 # --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事・学習の設定")
 event_name = st.sidebar.text_input("行事名・授業名", "広島大学校外学習")
+event_date = st.sidebar.date_input("実施日")
 
 st.sidebar.subheader("学習のねらい")
 g1 = st.sidebar.text_area("ねらい1", "最先端の科学研究に触れることで、理科や科学技術分野への興味・関心を高める。")
@@ -65,39 +67,58 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- 5. Word作成用関数 (重複排除と太字強化) ---
-def create_word(evaluation_text, img_bytes, event, goal_list):
+# --- 5. Word作成用関数 ---
+def create_word(evaluation_text, img_bytes, event, date, goal_list):
     doc = Document()
-    doc.add_heading(f'{event} 実施報告（振り返り分析）', 0)
     
+    # 余白設定 (上下左右 20mm)
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Mm(20)
+        section.bottom_margin = Mm(20)
+        section.left_margin = Mm(20)
+        section.right_margin = Mm(20)
+    
+    # タイトル
+    doc.add_heading(f'{event} 実施報告', 0)
+    doc.add_paragraph(f'実施日：{date.strftime("%Y年%m月%d日")}')
+    
+    # 1. 学習のねらい
     doc.add_heading('1. 学習のねらい', level=1)
     for i, g in enumerate(goal_list):
         p = doc.add_paragraph()
         p.add_run(f"({i+1}) {g}")
     
+    # 2. 生徒の反応
     doc.add_heading('2. 生徒の反応（語彙分析）', level=1)
     img_stream = io.BytesIO(img_bytes)
-    doc.add_picture(img_stream, width=Inches(5.8))
+    doc.add_picture(img_stream, width=Inches(5.5))
+    p_note = doc.add_paragraph()
+    p_note.add_run("※生徒感想の原文は別紙参照").italic = True
     
+    # 3. 評価と考察
     doc.add_heading('3. ねらいに対する評価と考察', level=1)
     
-    # 記号の削除と余計なヘッダー情報の削除
+    # テキスト整形：記号の削除
     clean_text = re.sub(r'#+\s*', '', evaluation_text)
     clean_text = clean_text.replace('**', '')
-    # 「報告書」「行事名」「設定されたねらい」などの重複項目を削除
+    # 二重記載の削除
     clean_text = re.sub(r'【報告書】|【行事名】:.*|【設定されたねらい】:|- ねらい\d:.*', '', clean_text).strip()
     
     lines = clean_text.split('\n')
     for line in lines:
-        if not line.strip():
+        line = line.strip()
+        if not line:
             continue
             
         p = doc.add_paragraph()
-        # 項目の見出し（【 】で囲まれた部分や特定のキーワード）を太字にする
-        if re.match(r'【.*】', line) or any(key in line[:10] for key in ["ねらい", "分析", "課題", "総括", "評価"]):
+        # 特定の項目名のみを太字にする（行全体が特定のキーワードで始まる場合のみ）
+        is_heading = any(line.startswith(key) for key in ["【分析】", "【今後の課題・改善案】", "【まとめ】", "ねらい"])
+        
+        if is_heading:
             run = p.add_run(line)
             run.bold = True
-            run.font.size = Pt(12) # 見出しは少し大きく
+            run.font.size = Pt(11)
         else:
             p.add_run(line)
     
@@ -114,7 +135,7 @@ if uploaded_file is not None:
     target_col = st.selectbox("分析対象の列", df.columns)
     
     if st.button("報告書原稿を作成する"):
-        with st.spinner("担当者の視点で分析中..."):
+        with st.spinner("データを分析し報告書を構成中..."):
             all_text_list = df[target_col].dropna().astype(str).tolist()
             all_text_full = "\n".join(all_text_list)
             wakati = extract_words(all_text_full)
@@ -148,10 +169,9 @@ if uploaded_file is not None:
                 ### 記述のルール
                 1. 冒頭に行事名やねらいを再度書く必要はありません。直接「【分析】」から書き始めてください。
                 2. 語尾は「〜である」「〜した」等の公的文書の体裁にしてください。
-                3. 具体的な単語（画像内の主要な言葉）を引用し、「生徒の〇％が〜」という表現ではなく、「多くの生徒が〇〇という語を用いており、〜の効果が確認できる」といった教諭の洞察として記述してください。
-                4. 各ねらいに対して「【分析】」と「【今後の課題・改善案】」を明確に分けて記述してください。
-                5. 最後に全体を通じた「【総括】」を添えてください。
-                6. 記号（#や*）は使用しないでください。
+                3. 各ねらいに対して「【分析】」と「【今後の課題・改善案】」を明確に分けて記述してください。
+                4. 最後に全体を通じた「【まとめ】」を添えてください。
+                5. 記号（#や*）は使用しないでください。
                 """
 
                 response = client.chat.completions.create(
@@ -164,7 +184,7 @@ if uploaded_file is not None:
                 st.header("📝 達成度評価と考察")
                 st.markdown(evaluation_text)
                 
-                word_file = create_word(evaluation_text, img_bytes, event_name, goals)
+                word_file = create_word(evaluation_text, img_bytes, event_name, event_date, goals)
                 
                 col1, col2 = st.columns(2)
                 with col1:
