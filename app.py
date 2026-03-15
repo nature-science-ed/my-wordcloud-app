@@ -8,7 +8,6 @@ import base64
 from openai import OpenAI
 from docx import Document
 from docx.shared import Inches, Pt, Mm
-from docx.enum.section import WD_ORIENT
 import re
 
 # --- 1. ページ設定 ---
@@ -24,16 +23,16 @@ except Exception:
 
 # --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事・学習の設定")
-# 行事名・授業名に(例)を追加
-event_name = st.sidebar.text_input("行事名・授業名 (例)", "広島大学校外学習")
+# 入力欄の初期値に(例)を含める
+event_name = st.sidebar.text_input("行事名・授業名", value="(例)理科校外学習")
 event_date = st.sidebar.date_input("実施日")
 
 st.sidebar.subheader("学習のねらい")
-# ねらい1に例文を追加
-g1 = st.sidebar.text_area("ねらい1 (例)", "最先端の科学研究に触れることで、理科や科学技術分野への興味・関心を高める。")
-g2 = st.sidebar.text_area("ねらい2", "大学での学びや学生生活の様子を知り、「学び続けること」の意義について考える。")
-g3 = st.sidebar.text_area("ねらい3", "")
-g4 = st.sidebar.text_area("ねらい4", "")
+# ねらいの入力欄にも(例)を含めた初期値を設定
+g1 = st.sidebar.text_area("ねらい1", value="(例)理科への興味・関心を高める。")
+g2 = st.sidebar.text_area("ねらい2", value="(例)進路意識を高める。")
+g3 = st.sidebar.text_area("ねらい3", value="")
+g4 = st.sidebar.text_area("ねらい4", value="")
 
 goals = [g for g in [g1, g2, g3, g4] if g.strip()]
 
@@ -69,7 +68,7 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- 5. Word作成用関数 (図の拡大対応) ---
+# --- 5. Word作成用関数 (図の最大化・余白2cm設定) ---
 def create_word(evaluation_text, img_bytes, event, date, goal_list):
     doc = Document()
     
@@ -94,28 +93,26 @@ def create_word(evaluation_text, img_bytes, event, date, goal_list):
     # 2. 生徒の反応
     doc.add_heading('2. 生徒の反応（語彙分析）', level=1)
     img_stream = io.BytesIO(img_bytes)
-    # 図のサイズを拡大 (幅6.2インチ：余白20mmの設定でほぼページ幅いっぱい)
-    doc.add_picture(img_stream, width=Inches(6.2))
+    # 幅を最大化 (6.5インチ)
+    doc.add_picture(img_stream, width=Inches(6.5))
     p_note = doc.add_paragraph()
     p_note.add_run("※生徒感想の原文は別紙参照").italic = True
     
     # 3. 評価と考察
     doc.add_heading('3. ねらいに対する評価と考察', level=1)
     
-    # テキスト整形：記号の削除
+    # テキスト整形
     clean_text = re.sub(r'#+\s*', '', evaluation_text)
     clean_text = clean_text.replace('**', '')
-    # 二重記載の削除
     clean_text = re.sub(r'【報告書】|【行事名】:.*|【設定されたねらい】:|- ねらい\d:.*', '', clean_text).strip()
     
     lines = clean_text.split('\n')
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
+        if not line: continue
             
         p = doc.add_paragraph()
-        # 特定の項目名のみを太字にする
+        # 項目見出しのみを太字にする
         is_heading = any(line.startswith(key) for key in ["【分析】", "【今後の課題・改善案】", "【まとめ】", "ねらい"])
         
         if is_heading:
@@ -131,20 +128,20 @@ def create_word(evaluation_text, img_bytes, event, date, goal_list):
     return doc_io
 
 # --- 6. メイン処理 ---
-uploaded_file = st.file_uploader("ファイルをアップロード", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("ファイルをアップロードしてください", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-    target_col = st.selectbox("分析対象の列", df.columns)
+    target_col = st.selectbox("分析対象の列を選択してください", df.columns)
     
     if st.button("報告書原稿を作成する"):
-        with st.spinner("データを分析し報告書を構成中..."):
+        with st.spinner("データを分析中..."):
             all_text_list = df[target_col].dropna().astype(str).tolist()
             all_text_full = "\n".join(all_text_list)
             wakati = extract_words(all_text_full)
             
             if not wakati.strip():
-                st.warning("単語を抽出できません。")
+                st.warning("有効な単語が抽出できませんでした。")
             else:
                 FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
                 wc = WordCloud(font_path=FONT_PATH, background_color="white", width=1200, height=600).generate(wakati)
