@@ -12,16 +12,15 @@ from docx.shared import Inches
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="Reflection Analyzer", layout="wide")
 st.title("📊 振り返り達成度分析システム")
-st.write("アンケート結果を可視化し、設定したねらいに対する達成度を客観的に評価します。")
 
 # --- 2. API設定 ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 except Exception:
-    st.error("システム設定（Secrets）を確認してください。")
+    st.error("システム設定を確認してください。")
     st.stop()
 
-# --- 3. サイドバー設定：行事情報入力 ---
+# --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事・学習の設定")
 event_name = st.sidebar.text_input("行事名・授業名", "広島大学校外学習")
 
@@ -31,7 +30,6 @@ g2 = st.sidebar.text_area("ねらい2", "将来の進路について考えるき
 g3 = st.sidebar.text_area("ねらい3", "")
 g4 = st.sidebar.text_area("ねらい4", "")
 
-# 有効なねらいをリスト化
 goals = [g for g in [g1, g2, g3, g4] if g.strip()]
 
 t = Tokenizer()
@@ -69,17 +67,17 @@ def extract_words(text):
 # --- 5. Word作成用関数 ---
 def create_word(evaluation_text, img_bytes, event, goal_list):
     doc = Document()
-    doc.add_heading(f'{event} 振り返り分析レポート', 0)
+    doc.add_heading(f'{event} 実施報告（振り返り分析）', 0)
     
-    doc.add_heading('【設定されたねらい】', level=1)
+    doc.add_heading('1. 学習のねらい', level=1)
     for i, g in enumerate(goal_list):
-        doc.add_paragraph(f"ねらい{i+1}: {g}")
+        doc.add_paragraph(f"({i+1}) {g}")
     
-    doc.add_heading('【可視化分析：ワードクラウド】', level=1)
+    doc.add_heading('2. 生徒の反応（語彙分析）', level=1)
     img_stream = io.BytesIO(img_bytes)
     doc.add_picture(img_stream, width=Inches(6))
     
-    doc.add_heading('【ねらいに対する達成度評価】', level=1)
+    doc.add_heading('3. ねらいに対する評価と考察', level=1)
     doc.add_paragraph(evaluation_text)
     
     doc_io = io.BytesIO()
@@ -88,20 +86,20 @@ def create_word(evaluation_text, img_bytes, event, goal_list):
     return doc_io
 
 # --- 6. メイン処理 ---
-uploaded_file = st.file_uploader("エクセルまたはCSVファイルをアップロードしてください", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("ファイルをアップロード（Excel/CSV）", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-    target_col = st.selectbox("分析対象の列を選択してください", df.columns)
+    target_col = st.selectbox("分析対象の列", df.columns)
     
-    if st.button("分析と達成度評価を実行"):
-        with st.spinner("データを分析中..."):
+    if st.button("分析と評価文の作成を実行"):
+        with st.spinner("分析レポートを作成中..."):
             all_text_list = df[target_col].dropna().astype(str).tolist()
             all_text_full = "\n".join(all_text_list)
             wakati = extract_words(all_text_full)
             
             if not wakati.strip():
-                st.warning("有効な単語が抽出できませんでした。")
+                st.warning("単語を抽出できません。")
             else:
                 FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
                 wc = WordCloud(font_path=FONT_PATH, background_color="white", width=1200, height=600).generate(wakati)
@@ -109,31 +107,28 @@ if uploaded_file is not None:
                 wc.to_image().save(img_buf, format='PNG')
                 img_bytes = img_buf.getvalue()
                 
-                st.subheader("📊 分析結果：ワードクラウド")
+                st.subheader("📊 振り返り語彙の可視化")
                 st.image(img_bytes)
 
                 base64_image = base64.b64encode(img_bytes).decode('utf-8')
                 context_text = all_text_full[:2000]
-
-                # ねらいをプロンプト用に整形
                 goals_str = "\n".join([f"ねらい{i+1}: {g}" for i, g in enumerate(goals)])
 
                 prompt = f"""
-                あなたは学校教育の専門家として，提供された「ワードクラウド画像」および「生徒の記述内容」を多角的に分析し，
-                以下の【行事名】における【設定されたねらい】への達成度を客観的に評価してください。
-
+                あなたは学校の教務主任または行事担当教諭として，生徒の振り返り結果を分析し，報告書を作成してください。
+                
                 【行事名】: {event_name}
                 【設定されたねらい】:
                 {goals_str}
-
-                【原文の一部】:
+                
+                【生徒の記述内容（抜粋）】:
                 {context_text}
 
-                ### 評価の指針
-                1. 各ねらいに対して，生徒がどのような変容を遂げたか，画像内の語彙を根拠に論述してください。
-                2. 単語の出現頻度だけでなく，否定語や困難さを示す表現（難しい、疲れる等）も踏まえ，実態に即した評価を行ってください。
-                3. 今後の指導に直結する専門的なアドバイスを添えてください。
-                4. 「AI」という言葉は使わず、一貫して教育的な分析レポートとして記述してください。
+                ### 記述のルール（AI感を排除する）
+                1. 語尾は「〜である」「〜した」「〜といえる」等、報告書として自然な形にする。
+                2. 「AIによる評価」や「〜が見受けられます」といった機械的な表現は避け、「担当者の分析」として記述する。
+                3. 具体的な語彙（画像内の主要な言葉）を根拠として挙げ、「生徒は〇〇と捉えている」「〇〇の効果があった」と断定的な評価も含める。
+                4. 各ねらいに対して「分析」と「今後の課題・改善案」を明確に分けて記述する。
                 """
 
                 response = client.chat.completions.create(
@@ -143,10 +138,9 @@ if uploaded_file is not None:
                 
                 evaluation_text = response.choices[0].message.content
                 st.divider()
-                st.header("📝 ねらいに対する達成度評価")
+                st.header("📝 達成度評価と考察")
                 st.markdown(evaluation_text)
                 
-                # Wordファイルの生成
                 word_file = create_word(evaluation_text, img_bytes, event_name, goals)
                 
                 col1, col2 = st.columns(2)
@@ -154,10 +148,10 @@ if uploaded_file is not None:
                     st.download_button("画像を保存", data=img_bytes, file_name=f"{event_name}_分析.png")
                 with col2:
                     st.download_button(
-                        label="📄 評価レポート(Word)を保存",
+                        label="📄 報告書(Word)を保存",
                         data=word_file,
-                        file_name=f"{event_name}_評価レポート.docx",
+                        file_name=f"{event_name}_実施報告書.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
 
-        st.success("分析レポートの作成が完了しました。")
+        st.success("報告書の作成が完了しました。")
