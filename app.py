@@ -6,28 +6,28 @@ import matplotlib.pyplot as plt
 import io
 import base64
 from openai import OpenAI
-from docx import Document  # ← 追加：Word作成用
+from docx import Document
+from docx.shared import Inches  # ← ここを確実にインポートするように修正しました
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="AI Reflection Analyzer", layout="wide")
-st.title("📊 AIリフレクション・アナライザー (Word出力対応版)")
+st.title("📊 AIリフレクション・アナライザー (Word出力対応)")
 
-# --- (中略：API設定、サイドバー、extract_words関数はそのまま) ---
-
-# --- API設定 (Secrets) ---
+# --- 2. API設定 ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 except Exception:
     st.error("APIキーが設定されていません。Settings > Secretsを確認してください。")
     st.stop()
 
-# --- サイドバー設定 ---
+# --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事のねらい設定")
 goal_1 = st.sidebar.text_area("ねらい1", "地域の魅力や課題について理解を深める。")
 goal_2 = st.sidebar.text_area("ねらい2", "地域活性化について考える。")
 
 t = Tokenizer()
 
+# --- 4. 単語抽出エンジン ---
 def extract_words(text):
     words = []
     target_feelings = ["面白い", "楽しい", "凄い", "すごい", "わかる", "驚く", "難しい", "疲れる", "つまらない", "嫌だ", "迷う"]
@@ -57,32 +57,29 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- Word作成用関数 ---
-def create_word(evaluation_text, img_bytes):
+# --- 5. Word作成用関数 (エラー修正済み) ---
+def create_word(evaluation_text, img_bytes, g1, g2):
     doc = Document()
     doc.add_heading('AIリフレクション評価レポート', 0)
     
-    # ねらいの記載
     doc.add_heading('【設定されたねらい】', level=1)
-    doc.add_paragraph(f"ねらい1: {goal_1}")
-    doc.add_paragraph(f"ねらい2: {goal_2}")
+    doc.add_paragraph(f"ねらい1: {g1}")
+    doc.add_paragraph(f"ねらい2: {g2}")
     
-    # ワードクラウド画像の挿入
     doc.add_heading('【分析結果：ワードクラウド】', level=1)
     img_stream = io.BytesIO(img_bytes)
-    doc.add_picture(img_stream, width=st.docx.shared.Inches(6)) # 画像サイズ調整
+    # 修正箇所: st.docx.shared ではなく Inches を直接使う
+    doc.add_picture(img_stream, width=Inches(6))
     
-    # 評価内容
     doc.add_heading('【AI評価詳細】', level=1)
     doc.add_paragraph(evaluation_text)
     
-    # 保存
     doc_io = io.BytesIO()
     doc.save(doc_io)
     doc_io.seek(0)
     return doc_io
 
-# --- メイン処理 ---
+# --- 6. メイン処理 ---
 uploaded_file = st.file_uploader("エクセルまたはCSVファイルをアップロードしてください", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
@@ -90,7 +87,7 @@ if uploaded_file is not None:
     target_col = st.selectbox("分析したい感想の列を選択してください", df.columns)
     
     if st.button("AIによる分析と詳細評価を実行"):
-        with st.spinner("AIが文脈を読み取っています..."):
+        with st.spinner("分析中..."):
             all_text_list = df[target_col].dropna().astype(str).tolist()
             all_text_full = "\n".join(all_text_list)
             wakati = extract_words(all_text_full)
@@ -105,7 +102,7 @@ if uploaded_file is not None:
                 img_bytes = img_buf.getvalue()
                 
                 st.subheader("📊 分析結果：ワードクラウド")
-                st.image(img_bytes, use_container_width=True)
+                st.image(img_bytes)
 
                 base64_image = base64.b64encode(img_bytes).decode('utf-8')
                 context_text = all_text_full[:2000]
@@ -114,7 +111,6 @@ if uploaded_file is not None:
                 あなたは中学校教師として，提供された「ワードクラウド画像」を分析し，以下の「ねらい」に対する達成度を評価してください。
                 【ねらい1】: {goal_1}
                 【ねらい2】: {goal_2}
-                原文も参考にし、否定的な表現も含めて正確に判定してください。
                 原文の一部: {context_text}
                 """
 
@@ -124,23 +120,20 @@ if uploaded_file is not None:
                 )
                 
                 evaluation_text = response.choices[0].message.content
-                
                 st.divider()
                 st.header("📝 AIによる達成度評価レポート")
                 st.markdown(evaluation_text)
                 
-                # --- ダウンロードセクション ---
+                # Wordファイルの生成
+                word_file = create_word(evaluation_text, img_bytes, goal_1, goal_2)
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.download_button("画像を保存", data=img_bytes, file_name="analysis.png")
                 with col2:
-                    # Wordファイルの生成とダウンロードボタン
-                    word_file = create_word(evaluation_text, img_bytes)
                     st.download_button(
-                        label="📄 評価レポート(Word)をダウンロード",
+                        label="📄 Wordレポートをダウンロード",
                         data=word_file,
                         file_name="AI評価レポート.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
-
-        st.success("完了しました。")
