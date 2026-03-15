@@ -7,7 +7,8 @@ import io
 import base64
 from openai import OpenAI
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
+import re
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="Reflection Analyzer", layout="wide")
@@ -25,8 +26,8 @@ st.sidebar.header("📋 行事・学習の設定")
 event_name = st.sidebar.text_input("行事名・授業名", "広島大学校外学習")
 
 st.sidebar.subheader("学習のねらい")
-g1 = st.sidebar.text_area("ねらい1", "地域の魅力や課題について理解を深める。")
-g2 = st.sidebar.text_area("ねらい2", "将来の進路について考えるきっかけとする。")
+g1 = st.sidebar.text_area("ねらい1", "最先端の科学研究に触れることで、理科や科学技術分野への興味・関心を高める。")
+g2 = st.sidebar.text_area("ねらい2", "大学での学びや学生生活の様子を知り、「学び続けること」の意義について考える。")
 g3 = st.sidebar.text_area("ねらい3", "")
 g4 = st.sidebar.text_area("ねらい4", "")
 
@@ -64,21 +65,41 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- 5. Word作成用関数 ---
+# --- 5. Word作成用関数 (記号削除と太字処理) ---
 def create_word(evaluation_text, img_bytes, event, goal_list):
     doc = Document()
     doc.add_heading(f'{event} 実施報告（振り返り分析）', 0)
     
     doc.add_heading('1. 学習のねらい', level=1)
     for i, g in enumerate(goal_list):
-        doc.add_paragraph(f"({i+1}) {g}")
+        p = doc.add_paragraph()
+        p.add_run(f"({i+1}) {g}")
     
     doc.add_heading('2. 生徒の反応（語彙分析）', level=1)
     img_stream = io.BytesIO(img_bytes)
-    doc.add_picture(img_stream, width=Inches(6))
+    doc.add_picture(img_stream, width=Inches(5.8))
     
     doc.add_heading('3. ねらいに対する評価と考察', level=1)
-    doc.add_paragraph(evaluation_text)
+    
+    # AIテキストの整形処理
+    # 1. 記号 (# や *) を削除
+    clean_text = re.sub(r'#+\s*', '', evaluation_text)
+    clean_text = clean_text.replace('**', '')
+    
+    # 行ごとに処理して、見出しっぽい部分は太字にする
+    lines = clean_text.split('\n')
+    for line in lines:
+        if not line.strip():
+            continue
+            
+        p = doc.add_paragraph()
+        # 「分析」「今後の課題」「総括」などのキーワードで始まる行を太字にする
+        if any(key in line[:15] for key in ["ねらい", "分析", "課題", "総括", "評価"]):
+            run = p.add_run(line)
+            run.bold = True
+            run.font.size = Pt(11)
+        else:
+            p.add_run(line)
     
     doc_io = io.BytesIO()
     doc.save(doc_io)
@@ -86,14 +107,14 @@ def create_word(evaluation_text, img_bytes, event, goal_list):
     return doc_io
 
 # --- 6. メイン処理 ---
-uploaded_file = st.file_uploader("ファイルをアップロード（Excel/CSV）", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("ファイルをアップロード", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
     target_col = st.selectbox("分析対象の列", df.columns)
     
-    if st.button("分析と評価文の作成を実行"):
-        with st.spinner("分析レポートを作成中..."):
+    if st.button("報告書原稿を作成する"):
+        with st.spinner("担当者の視点で分析中..."):
             all_text_list = df[target_col].dropna().astype(str).tolist()
             all_text_full = "\n".join(all_text_list)
             wakati = extract_words(all_text_full)
@@ -107,7 +128,7 @@ if uploaded_file is not None:
                 wc.to_image().save(img_buf, format='PNG')
                 img_bytes = img_buf.getvalue()
                 
-                st.subheader("📊 振り返り語彙の可視化")
+                st.subheader("📊 振り返り語彙の分析")
                 st.image(img_bytes)
 
                 base64_image = base64.b64encode(img_bytes).decode('utf-8')
@@ -124,11 +145,11 @@ if uploaded_file is not None:
                 【生徒の記述内容（抜粋）】:
                 {context_text}
 
-                ### 記述のルール（AI感を排除する）
-                1. 語尾は「〜である」「〜した」「〜といえる」等、報告書として自然な形にする。
-                2. 「AIによる評価」や「〜が見受けられます」といった機械的な表現は避け、「担当者の分析」として記述する。
-                3. 具体的な語彙（画像内の主要な言葉）を根拠として挙げ、「生徒は〇〇と捉えている」「〇〇の効果があった」と断定的な評価も含める。
-                4. 各ねらいに対して「分析」と「今後の課題・改善案」を明確に分けて記述する。
+                ### 記述のルール
+                1. 語尾は「〜である」「〜した」「〜といえる」等、公的文書として自然な形にする。
+                2. 具体的な語彙（画像内の主要な言葉）を根拠として挙げ、「生徒は〇〇と捉えている」「〇〇の効果があった」と断定的な評価も含める。
+                3. 各ねらいに対して「分析」と「今後の課題・改善案」を明確に分けて記述する。
+                4. 文中に # や * などの記号は一切含めないこと。
                 """
 
                 response = client.chat.completions.create(
@@ -153,5 +174,3 @@ if uploaded_file is not None:
                         file_name=f"{event_name}_実施報告書.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
-
-        st.success("報告書の作成が完了しました。")
