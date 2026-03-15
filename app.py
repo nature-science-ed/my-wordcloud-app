@@ -20,8 +20,8 @@ except Exception:
 
 # --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事のねらい設定")
-goal_1 = st.sidebar.text_area("ねらい1", "地域（邑南町）の魅力や課題について理解を深める。")
-goal_2 = st.sidebar.text_area("ねらい2", "農業や特産品（柚子胡椒等）を通じた地域活性化について考える。")
+goal_1 = st.sidebar.text_area("ねらい1", "(例)　地域の魅力や課題について理解を深める。")
+goal_2 = st.sidebar.text_area("ねらい2", "(例)　地域活性化について考える。")
 
 t = Tokenizer()
 
