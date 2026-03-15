@@ -24,11 +24,13 @@ except Exception:
 
 # --- 3. サイドバー設定 ---
 st.sidebar.header("📋 行事・学習の設定")
-event_name = st.sidebar.text_input("行事名・授業名", "広島大学校外学習")
+# 行事名・授業名に(例)を追加
+event_name = st.sidebar.text_input("行事名・授業名 (例)", "広島大学校外学習")
 event_date = st.sidebar.date_input("実施日")
 
 st.sidebar.subheader("学習のねらい")
-g1 = st.sidebar.text_area("ねらい1", "最先端の科学研究に触れることで、理科や科学技術分野への興味・関心を高める。")
+# ねらい1に例文を追加
+g1 = st.sidebar.text_area("ねらい1 (例)", "最先端の科学研究に触れることで、理科や科学技術分野への興味・関心を高める。")
 g2 = st.sidebar.text_area("ねらい2", "大学での学びや学生生活の様子を知り、「学び続けること」の意義について考える。")
 g3 = st.sidebar.text_area("ねらい3", "")
 g4 = st.sidebar.text_area("ねらい4", "")
@@ -67,7 +69,7 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- 5. Word作成用関数 ---
+# --- 5. Word作成用関数 (図の拡大対応) ---
 def create_word(evaluation_text, img_bytes, event, date, goal_list):
     doc = Document()
     
@@ -92,7 +94,8 @@ def create_word(evaluation_text, img_bytes, event, date, goal_list):
     # 2. 生徒の反応
     doc.add_heading('2. 生徒の反応（語彙分析）', level=1)
     img_stream = io.BytesIO(img_bytes)
-    doc.add_picture(img_stream, width=Inches(5.5))
+    # 図のサイズを拡大 (幅6.2インチ：余白20mmの設定でほぼページ幅いっぱい)
+    doc.add_picture(img_stream, width=Inches(6.2))
     p_note = doc.add_paragraph()
     p_note.add_run("※生徒感想の原文は別紙参照").italic = True
     
@@ -112,7 +115,7 @@ def create_word(evaluation_text, img_bytes, event, date, goal_list):
             continue
             
         p = doc.add_paragraph()
-        # 特定の項目名のみを太字にする（行全体が特定のキーワードで始まる場合のみ）
+        # 特定の項目名のみを太字にする
         is_heading = any(line.startswith(key) for key in ["【分析】", "【今後の課題・改善案】", "【まとめ】", "ねらい"])
         
         if is_heading:
