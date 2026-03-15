@@ -28,45 +28,59 @@ t = Tokenizer()
 # --- 4. 改良版：単語抽出エンジン (否定語・ネガティブ語対応) ---
 def extract_words(text):
     words = []
-    # 抽出したい感情・状態を表す言葉（ポジティブ・ネガティブ両方）
+    # 判定したい感情・状態ワード（基本形で指定）
     target_feelings = [
-        "面白い", "楽しい", "凄い", "すごい", "わかる", "驚く", "納得",
-        "難しい", "疲れる", "つまらない", "嫌だ", "迷う", "行く", "できる"
+        "面白い", "楽しい", "凄い", "すごい", "わかる", "驚く", 
+        "難しい", "疲れる", "つまらない", "嫌だ", "迷う"
     ]
     
     if not text or pd.isna(text):
         return ""
 
     tokens = list(t.tokenize(str(text)))
-    
     i = 0
     while i < len(tokens):
         token = tokens[i]
         part = token.part_of_speech.split(",")[0]
         base = token.base_form
+        surface = token.surface
         
-        # A. 名詞の抽出（2文字以上）
+        # 1. 名詞の抽出
         if part == "名詞" and len(base) >= 2:
             if base not in ["こと", "もの", "よう", "そう", "これ", "それ"]:
                 words.append(base)
         
-        # B. 感情・動詞の抽出と否定チェック
-        elif base in target_feelings:
-            picked_word = base
+        # 2. 感情語（形容詞・動詞）の判定と否定の結合
+        elif base in target_feelings or part == "形容詞":
+            word_to_add = base
             
-            # 先読みして否定（ない、ず、ぬ、ん）や助動詞を確認
+            # 次のトークンを確認して否定（ない、ん、ぬ）を探す
             if i + 1 < len(tokens):
                 next_t = tokens[i+1]
-                # 「〜ない」「〜なかった」などをチェック
-                if next_t.base_form in ["ない", "ず", "ぬ", "ん"] or "助動詞" in next_t.part_of_speech:
-                    if next_t.base_form in ["ない", "ず", "ぬ", "ん", "まい"]:
-                        picked_word = f"{base}ない"
+                if next_t.base_form in ["ない", "ぬ", "ん"] or "助動詞" in next_t.part_of_speech:
+                    if next_t.base_form in ["ない", "ぬ", "ん"]:
+                        # 形容詞の場合は「語幹 + く」にしてから「ない」を繋ぐ
+                        if part == "形容詞":
+                            # 「面白い」の語幹「面白」に「くない」を付ける
+                            word_to_add = base[:-1] + "くない"
+                        else:
+                            # 動詞などはそのまま「ない」を付ける
+                            word_to_add = base + "ない"
                         i += 1 # 「ない」を消費
             
-            # 除外ワードでなければ追加
-            if picked_word not in ["行く", "できる"]: # 肯定のままの単なる動詞は除外
-                words.append(picked_word)
-        
+            # 除外リストになければ追加
+            if word_to_add not in ["ある", "する", "いる"]:
+                words.append(word_to_add)
+                
+        # 3. 「行きたくない」などの特殊な助動詞結合
+        elif surface == "行き" and i + 1 < len(tokens) and "たい" in tokens[i+1].surface:
+            word_to_add = "行きたい"
+            if i + 2 < len(tokens) and tokens[i+2].base_form == "ない":
+                word_to_add = "行きたくない"
+                i += 1
+            words.append(word_to_add)
+            i += 1
+
         i += 1
     return " ".join(words)
 
