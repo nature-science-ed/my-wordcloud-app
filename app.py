@@ -65,7 +65,7 @@ def extract_words(text):
         i += 1
     return " ".join(words)
 
-# --- 5. Word作成用関数 (記号削除と太字処理) ---
+# --- 5. Word作成用関数 (重複排除と太字強化) ---
 def create_word(evaluation_text, img_bytes, event, goal_list):
     doc = Document()
     doc.add_heading(f'{event} 実施報告（振り返り分析）', 0)
@@ -81,23 +81,23 @@ def create_word(evaluation_text, img_bytes, event, goal_list):
     
     doc.add_heading('3. ねらいに対する評価と考察', level=1)
     
-    # AIテキストの整形処理
-    # 1. 記号 (# や *) を削除
+    # 記号の削除と余計なヘッダー情報の削除
     clean_text = re.sub(r'#+\s*', '', evaluation_text)
     clean_text = clean_text.replace('**', '')
+    # 「報告書」「行事名」「設定されたねらい」などの重複項目を削除
+    clean_text = re.sub(r'【報告書】|【行事名】:.*|【設定されたねらい】:|- ねらい\d:.*', '', clean_text).strip()
     
-    # 行ごとに処理して、見出しっぽい部分は太字にする
     lines = clean_text.split('\n')
     for line in lines:
         if not line.strip():
             continue
             
         p = doc.add_paragraph()
-        # 「分析」「今後の課題」「総括」などのキーワードで始まる行を太字にする
-        if any(key in line[:15] for key in ["ねらい", "分析", "課題", "総括", "評価"]):
+        # 項目の見出し（【 】で囲まれた部分や特定のキーワード）を太字にする
+        if re.match(r'【.*】', line) or any(key in line[:10] for key in ["ねらい", "分析", "課題", "総括", "評価"]):
             run = p.add_run(line)
             run.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(12) # 見出しは少し大きく
         else:
             p.add_run(line)
     
@@ -136,20 +136,22 @@ if uploaded_file is not None:
                 goals_str = "\n".join([f"ねらい{i+1}: {g}" for i, g in enumerate(goals)])
 
                 prompt = f"""
-                あなたは学校の教務主任または行事担当教諭として，生徒の振り返り結果を分析し，報告書を作成してください。
+                あなたは学校の教諭として，生徒の振り返り結果の分析報告書を作成してください。
                 
-                【行事名】: {event_name}
-                【設定されたねらい】:
+                【分析対象行事】: {event_name}
+                【設定したねらい】:
                 {goals_str}
                 
                 【生徒の記述内容（抜粋）】:
                 {context_text}
 
                 ### 記述のルール
-                1. 語尾は「〜である」「〜した」「〜といえる」等、公的文書として自然な形にする。
-                2. 具体的な語彙（画像内の主要な言葉）を根拠として挙げ、「生徒は〇〇と捉えている」「〇〇の効果があった」と断定的な評価も含める。
-                3. 各ねらいに対して「分析」と「今後の課題・改善案」を明確に分けて記述する。
-                4. 文中に # や * などの記号は一切含めないこと。
+                1. 冒頭に行事名やねらいを再度書く必要はありません。直接「【分析】」から書き始めてください。
+                2. 語尾は「〜である」「〜した」等の公的文書の体裁にしてください。
+                3. 具体的な単語（画像内の主要な言葉）を引用し、「生徒の〇％が〜」という表現ではなく、「多くの生徒が〇〇という語を用いており、〜の効果が確認できる」といった教諭の洞察として記述してください。
+                4. 各ねらいに対して「【分析】」と「【今後の課題・改善案】」を明確に分けて記述してください。
+                5. 最後に全体を通じた「【総括】」を添えてください。
+                6. 記号（#や*）は使用しないでください。
                 """
 
                 response = client.chat.completions.create(
